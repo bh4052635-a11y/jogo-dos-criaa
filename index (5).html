@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Miner Arena Online</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: #05040a;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    color: #e6e6ff;
+  }
+
+  /* ---------- HUD ---------- */
+  #hud {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    padding: 8px 10px;
+    background: linear-gradient(180deg, #0b0714, #0a0612);
+    border-bottom: 1px solid #3a1e6a;
+    box-shadow: 0 0 20px rgba(140, 60, 255, 0.35);
+    position: relative; z-index: 5;
+  }
+  .hud-item {
+    background: #120a24;
+    border: 1px solid #4b2a8c;
+    border-radius: 10px;
+    padding: 5px 10px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    box-shadow: 0 0 8px rgba(120, 60, 255, 0.25) inset;
+  }
+  #hudName { color: #7dfcff; }
+  #hudSync { color: #7dfcff; margin-left: auto; }
+  #hudSync.on { color: #6bffb0; }
+  #hpFill { transition: width .25s ease; }
+
+  /* ---------- ARENA ---------- */
+  #arenaWrap { position: relative; width: 100%; height: calc(100vh - 46px); }
+  #arena {
+    position: absolute; inset: 0;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 50% 40%, #140a2a 0%, #060312 70%),
+      repeating-linear-gradient(0deg, rgba(120,60,255,0.06) 0 1px, transparent 1px 40px),
+      repeating-linear-gradient(90deg, rgba(120,60,255,0.06) 0 1px, transparent 1px 40px);
+    background-size: auto, 40px 40px, 40px 40px;
+    animation: gridMove 12s linear infinite;
+    border-top: 1px solid #2a1650;
+  }
+  @keyframes gridMove {
+    from { background-position: 0 0, 0 0, 0 0; }
+    to   { background-position: 0 0, 40px 40px, 40px 40px; }
+  }
+
+  /* ---------- PLAYER ---------- */
+  .player {
+    position: absolute;
+    width: 46px; height: 46px;
+    transform: translate(-50%, -50%);
+    transition: left .12s linear, top .12s linear, opacity .3s;
+    pointer-events: none;
+    text-align: center;
+  }
+  .player .avatar {
+    width: 40px; height: 40px; margin: 0 auto;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+    border: 2px solid #fff;
+    box-shadow: 0 0 14px currentColor, 0 0 4px #fff inset;
+    background: radial-gradient(circle at 35% 30%, rgba(255,255,255,0.5), transparent 60%);
+  }
+  .player .name {
+    font-size: 10px; font-weight: 700; margin-top: 2px;
+    color: #cfe; text-shadow: 0 0 4px #000, 0 0 6px #7dfcff;
+    white-space: nowrap;
+  }
+  .player .hpbar-wrap {
+    width: 40px; height: 5px; margin: 2px auto 0;
+    background: #1a0f30; border-radius: 4px; overflow: hidden;
+    border: 1px solid #3a1e6a;
+  }
+  .player .hpbar { height: 100%; background: linear-gradient(90deg,#ff3d6b,#ff9d3d); }
+  .player.self .hpbar { background: linear-gradient(90deg,#3dffb0,#3dd8ff); }
+  .player.dead .avatar { filter: grayscale(1) brightness(.5); }
+  .player.dead .name::after { content: " 💀"; }
+  .player.hit .avatar { animation: hitFlash .3s ease; }
+  @keyframes hitFlash {
+    0% { box-shadow: 0 0 30px #ff2b4d, 0 0 6px #fff inset; }
+    100% { box-shadow: 0 0 14px currentColor, 0 0 4px #fff inset; }
+  }
+  .player.attacking .avatar { animation: attackPulse .25s ease; }
+  @keyframes attackPulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.35); }
+    100% { transform: scale(1); }
+  }
+
+  /* ---------- ROCKS ---------- */
+  .rock {
+    position: absolute;
+    width: 30px; height: 30px;
+    transform: translate(-50%, -50%);
+    font-size: 22px;
+    display: flex; align-items: center; justify-content: center;
+    filter: drop-shadow(0 0 6px #7d5cff);
+    animation: rockFloat 2.4s ease-in-out infinite;
+    pointer-events: none;
+  }
+  .rock.gold { filter: drop-shadow(0 0 10px #ffd60a); animation-duration: 1.6s; }
+  @keyframes rockFloat {
+    0%, 100% { transform: translate(-50%, -50%) translateY(0); }
+    50% { transform: translate(-50%, -50%) translateY(-4px); }
+  }
+
+  /* ---------- FLOATING TEXT ---------- */
+  .floating-text {
+    position: absolute; transform: translate(-50%, -50%);
+    font-weight: 800; font-size: 14px; pointer-events: none;
+    text-shadow: 0 0 6px #000;
+    animation: floatUp 1s ease-out forwards;
+    z-index: 10;
+  }
+  @keyframes floatUp {
+    0% { opacity: 1; transform: translate(-50%, -50%) translateY(0); }
+    100% { opacity: 0; transform: translate(-50%, -50%) translateY(-40px); }
+  }
+
+  /* ---------- DEATH OVERLAY ---------- */
+  #deathOverlay {
+    position: absolute; inset: 0; z-index: 20;
+    display: none; align-items: center; justify-content: center;
+    flex-direction: column; gap: 10px;
+    background: rgba(10, 2, 20, 0.75);
+    backdrop-filter: blur(2px);
+  }
+  #deathOverlay.show { display: flex; }
+  #deathOverlay h2 { color: #ff3d6b; text-shadow: 0 0 12px #ff3d6b; margin: 0; font-size: 26px; }
+  #deathOverlay p { color: #cfe; margin: 0; }
+
+  /* ---------- PLAYERS PANEL ---------- */
+  #playersPanel {
+    position: absolute; top: 8px; right: 8px; z-index: 6;
+    background: rgba(12, 7, 24, 0.75);
+    border: 1px solid #4b2a8c;
+    border-radius: 10px;
+    padding: 6px 8px;
+    font-size: 11px;
+    min-width: 120px;
+    box-shadow: 0 0 10px rgba(120,60,255,.3);
+  }
+  #playersPanel .title { color: #7dfcff; font-weight: 700; margin-bottom: 4px; }
+  #playersPanel .row { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
+
+  /* ---------- MOBILE CONTROLS ---------- */
+  #mobileControls { display: none; }
+  @media (max-width: 900px), (pointer: coarse) {
+    #mobileControls {
+      display: block; position: absolute; inset: 0; z-index: 15; pointer-events: none;
+    }
+    .dpad {
+      position: absolute; left: 16px; bottom: 16px;
+      width: 140px; height: 140px; pointer-events: auto;
+      display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
+      gap: 4px;
+    }
+    .dbtn {
+      background: rgba(90, 40, 200, 0.35);
+      border: 1px solid #7d4cff;
+      border-radius: 10px;
+      color: #fff; font-size: 18px;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 10px rgba(120,60,255,.4);
+    }
+    #btnUp { grid-column: 2; grid-row: 1; }
+    #btnLeft { grid-column: 1; grid-row: 2; }
+    #btnRight { grid-column: 3; grid-row: 2; }
+    #btnDown { grid-column: 2; grid-row: 3; }
+    #btnAttack {
+      position: absolute; right: 20px; bottom: 30px; pointer-events: auto;
+      width: 78px; height: 78px; border-radius: 50%;
+      background: radial-gradient(circle, #ff3d6b, #7d0033);
+      border: 2px solid #ff9dae;
+      color: #fff; font-size: 26px; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 18px #ff3d6b;
+    }
+  }
+</style>
+</head>
+<body>
+
+  <div id="hud">
+    <div class="hud-item">💰 <span id="hudCoins">0</span></div>
+    <div class="hud-item">❤️ <span id="hudHp">100</span>/<span id="hudMaxHp">100</span></div>
+    <div class="hud-item">⭐ <span id="hudXp">0</span> (Lv <span id="hudLevel">1</span>)</div>
+    <div class="hud-item">⚔ <span id="hudDamage">10</span></div>
+    <div class="hud-item">🏷 <span id="hudName">Player</span></div>
+    <div class="hud-item" id="hudSync">🌐 Conectando...</div>
+  </div>
+
+  <div id="arenaWrap">
+    <div id="arena">
+      <div id="playersPanel">
+        <div class="title">Jogadores online</div>
+        <div id="playersList"></div>
+      </div>
+      <div id="deathOverlay">
+        <h2>💀 Você foi derrotado!</h2>
+        <p id="deathText">Respawn em 3s...</p>
+      </div>
+    </div>
+
+    <div id="mobileControls">
+      <div class="dpad">
+        <div class="dbtn" id="btnUp">▲</div>
+        <div class="dbtn" id="btnLeft">◀</div>
+        <div class="dbtn" id="btnRight">▶</div>
+        <div class="dbtn" id="btnDown">▼</div>
+      </div>
+      <div id="btnAttack">⚔</div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ============================================================
+  // CONFIG
+  // ============================================================
+  const CHANNEL_NAME   = 'miner_arena_channel_v1';
+  const LS_PLAYER_PRE  = 'ma_player_';
+  const LS_ROCKS_KEY   = 'ma_rocks_v1';
+  const LS_PROGRESS_PRE= 'ma_progress_';
+  const MAX_ROCKS      = 8;
+  const ATTACK_RANGE   = 10;   // % units
+  const MINE_RANGE     = 6;    // % units
+  const ATTACK_COOLDOWN= 800;  // ms
+  const MOVE_SPEED     = 34;   // % per second
+  const BROADCAST_MS   = 120;
+  const STALE_MS        = 6000;
+  const COLORS = ['#ff3d6b', '#3dd8ff', '#7dff3d', '#ffd60a', '#c73dff', '#ff8a3d', '#3dffcf'];
+
+  const arenaEl   = document.getElementById('arena');
+  const syncEl    = document.getElementById('hudSync');
+  const deathOverlay = document.getElementById('deathOverlay');
+  const deathText = document.getElementById('deathText');
+  const playersListEl = document.getElementById('playersList');
+
+  // ============================================================
+  // IDENTITY (nova aba = novo jogador)
+  // ============================================================
+  let myId = sessionStorage.getItem('ma_id');
+  if (!myId) {
+    myId = 'p_' + Math.random().toString(36).slice(2, 9);
+    sessionStorage.setItem('ma_id', myId);
+  }
+
+  function hashColor(id) {
+    let h = 0;
+    for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+    return COLORS[h % COLORS.length];
+  }
+
+  function level(xp) { return Math.floor(xp / 100) + 1; }
+  function maxHpFor(lv) { return 100 + (lv - 1) * 10; }
+  function damageFor(lv) { return 10 + (lv - 1) * 2; }
+  function rand(a, b) { return a + Math.random() * (b - a); }
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+  // ============================================================
+  // STATE
+  // ============================================================
+  let progress = { coins: 0, xp: 0 };
+  try {
+    const saved = localStorage.getItem(LS_PROGRESS_PRE + myId);
+    if (saved) progress = JSON.parse(saved);
+  } catch (e) {}
+
+  const self = {
+    id: myId,
+    name: 'Player ' + myId.slice(2, 6).toUpperCase(),
+    color: hashColor(myId),
+    x: rand(20, 80),
+    y: rand(20, 80),
+    hp: 100,
+    maxHp: 100,
+    coins: progress.coins || 0,
+    xp: progress.xp || 0,
+    damage: 10,
+    level: 1,
+    alive: true,
+    attackReadyAt: 0,
+    lastSeen: Date.now()
+  };
+  recomputeLevel();
+  self.hp = self.maxHp;
+
+  const players = { [myId]: self };
+  const domEls = {};
+  let rocks = [];
+  const rockEls = {};
+  const keys = {};
+
+  // ============================================================
+  // BROADCAST CHANNEL + LOCALSTORAGE FALLBACK
+  // ============================================================
+  const bc = ('BroadcastChannel' in window) ? new BroadcastChannel(CHANNEL_NAME) : null;
+  function send(msg) { if (bc) { try { bc.postMessage(msg); } catch (e) {} } }
+  if (bc) bc.onmessage = (e) => handleMessage(e.data);
+
+  window.addEventListener('storage', (e) => {
+    if (!e.key) return;
+    if (e.key.startsWith(LS_PLAYER_PRE)) {
+      const id = e.key.slice(LS_PLAYER_PRE.length);
+      if (id === myId) return;
+      if (e.newValue) {
+        try { mergePlayer(JSON.parse(e.newValue)); } catch (err) {}
+      } else {
+        removePlayer(id);
+      }
+    } else if (e.key === LS_ROCKS_KEY) {
+      if (e.newValue) { try { rocks = JSON.parse(e.newValue); renderRocks(); } catch (err) {} }
+    }
+  });
+
+  function handleMessage(msg) {
+    if (!msg || !msg.type) return;
+    switch (msg.type) {
+      case 'state':
+        if (msg.payload && msg.payload.id !== myId) mergePlayer(msg.payload);
+        break;
+      case 'attack':
+        onAttackMsg(msg);
+        break;
+      case 'rock_new':
+        addRockIfMissing(msg.rock);
+        break;
+      case 'rock_removed':
+        removeRockLocal(msg.id);
+        break;
+      case 'player_died':
+        onPlayerDied(msg);
+        break;
+      case 'player_left':
+        removePlayer(msg.id);
+        break;
+    }
+  }
+
+  function mergePlayer(st) {
+    st.lastSeen = Date.now();
+    players[st.id] = Object.assign({}, players[st.id], st, { lastSeen: Date.now() });
+    ensurePlayerEl(st.id);
+  }
+
+  function removePlayer(id) {
+    if (id === myId) return;
+    delete players[id];
+    const el = domEls[id];
+    if (el) { el.remove(); delete domEls[id]; }
+  }
+
+  // Recupera jogadores já ativos ao carregar
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith(LS_PLAYER_PRE)) {
+      const id = key.slice(LS_PLAYER_PRE.length);
+      if (id === myId) continue;
+      try {
+        const st = JSON.parse(localStorage.getItem(key));
+        if (st && Date.now() - (st.lastSeen || 0) < STALE_MS) mergePlayer(st);
+      } catch (e) {}
+    }
+  }
+  try {
+    const savedRocks = localStorage.getItem(LS_ROCKS_KEY);
+    if (savedRocks) rocks = JSON.parse(savedRocks);
+  } catch (e) {}
+
+  // ============================================================
+  // DOM PLAYER ELEMENTS
+  // ============================================================
+  function ensurePlayerEl(id) {
+    if (domEls[id]) return domEls[id];
+    const p = players[id];
+    const el = document.createElement('div');
+    el.className = 'player' + (id === myId ? ' self' : '');
+    el.innerHTML =
+      '<div class="avatar" style="color:' + p.color + '; background-color:' + p.color + '33; border-color:' + p.color + '">' +
+        (id === myId ? '🧑‍🚀' : '👾') +
+      '</div>' +
+      '<div class="hpbar-wrap"><div class="hpbar"></div></div>' +
+      '<div class="name">' + p.name + '</div>';
+    arenaEl.appendChild(el);
+    domEls[id] = el;
+    return el;
+  }
+  ensurePlayerEl(myId);
+
+  // ============================================================
+  // ROCKS
+  // ============================================================
+  function saveRocks() {
+    try { localStorage.setItem(LS_ROCKS_KEY, JSON.stringify(rocks)); } catch (e) {}
+  }
+
+  function spawnRock() {
+    const type = Math.random() < 0.25 ? 'gold' : 'common';
+    const rock = { id: 'r_' + Math.random().toString(36).slice(2, 8), type, x: rand(8, 92), y: rand(8, 92) };
+    rocks.push(rock);
+    saveRocks();
+    send({ type: 'rock_new', rock });
+    renderRocks();
+  }
+
+  function addRockIfMissing(rock) {
+    if (!rock || rocks.find(r => r.id === rock.id)) return;
+    rocks.push(rock);
+    renderRocks();
+  }
+
+  function removeRockLocal(id) {
+    rocks = rocks.filter(r => r.id !== id);
+    const el = rockEls[id];
+    if (el) { el.remove(); delete rockEls[id]; }
+  }
+
+  function renderRocks() {
+    const activeIds = new Set(rocks.map(r => r.id));
+    for (const id in rockEls) {
+      if (!activeIds.has(id)) { rockEls[id].remove(); delete rockEls[id]; }
+    }
+    for (const r of rocks) {
+      let el = rockEls[r.id];
+      if (!el) {
+        el = document.createElement('div');
+        el.className = 'rock' + (r.type === 'gold' ? ' gold' : '');
+        el.textContent = r.type === 'gold' ? '🟡' : '🪨';
+        arenaEl.appendChild(el);
+        rockEls[r.id] = el;
+      }
+      el.style.left = r.x + '%';
+      el.style.top = r.y + '%';
+    }
+  }
+  renderRocks();
+
+  function isLeader() {
+    const active = Object.keys(players)
+      .filter(id => Date.now() - players[id].lastSeen < STALE_MS)
+      .sort();
+    return active[0] === myId;
+  }
+
+  setInterval(() => {
+    if (isLeader() && rocks.length < MAX_ROCKS) spawnRock();
+  }, 2200);
+
+  function checkMining() {
+    for (const r of rocks) {
+      if (dist(self, r) < MINE_RANGE) {
+        mineRock(r);
+        break;
+      }
+    }
+  }
+
+  function mineRock(r) {
+    removeRockLocal(r.id);
+    saveRocks();
+    send({ type: 'rock_removed', id: r.id });
+    const reward = r.type === 'gold' ? { coins: 5, xp: 15 } : { coins: 1, xp: 5 };
+    self.coins += reward.coins;
+    self.xp += reward.xp;
+    recomputeLevel();
+    saveProgress();
+    showFloatingText(self.x, self.y, '+' + reward.coins + '💰', '#ffd60a');
+    updateHUD();
+  }
+
+  // ============================================================
+  // PROGRESS / LEVEL
+  // ============================================================
+  function recomputeLevel() {
+    const lv = level(self.xp);
+    const leveledUp = lv > self.level;
+    self.level = lv;
+    self.maxHp = maxHpFor(lv);
+    self.damage = damageFor(lv);
+    if (leveledUp) self.hp = self.maxHp;
+    if (self.hp > self.maxHp) self.hp = self.maxHp;
+  }
+
+  function saveProgress() {
+    try {
+      localStorage.setItem(LS_PROGRESS_PRE + myId, JSON.stringify({ coins: self.coins, xp: self.xp }));
+    } catch (e) {}
+  }
+
+  // ============================================================
+  // COMBAT
+  // ============================================================
+  function tryAttack() {
+    if (!self.alive) return;
+    const now = Date.now();
+    if (now < self.attackReadyAt) return;
+    self.attackReadyAt = now + ATTACK_COOLDOWN;
+
+    flashAttacker(myId);
+
+    let target = null, best = Infinity;
+    for (const id in players) {
+      if (id === myId) continue;
+      const p = players[id];
+      if (!p.alive) continue;
+      const d = dist(self, p);
+      if (d < ATTACK_RANGE && d < best) { best = d; target = p; }
+    }
+
+    if (target) {
+      send({ type: 'attack', targetId: target.id, damage: self.damage, attackerId: myId, attackerName: self.name });
+    }
+  }
+
+  function onAttackMsg(msg) {
+    flashAttacker(msg.attackerId);
+    if (players[msg.targetId]) {
+      const p = players[msg.targetId];
+      showFloatingText(p.x, p.y, '-' + msg.damage, '#ff3d6b');
+      flashHit(msg.targetId);
+    }
+    if (msg.targetId === myId) {
+      applyDamage(msg.damage, msg.attackerId, msg.attackerName);
+    }
+  }
+
+  function applyDamage(dmg, attackerId, attackerName) {
+    if (!self.alive) return;
+    self.hp = Math.max(0, self.hp - dmg);
+    updateHUD();
+    broadcastSelfNow();
+    if (self.hp <= 0) {
+      self.alive = false;
+      send({ type: 'player_died', id: myId, killerId: attackerId, killerName: attackerName });
+      scheduleRespawn();
+    }
+  }
+
+  function onPlayerDied(msg) {
+    if (players[msg.id]) { players[msg.id].alive = false; players[msg.id].hp = 0; }
+    if (msg.killerId === myId) {
+      self.coins += 20;
+      self.xp += 30;
+      recomputeLevel();
+      saveProgress();
+      updateHUD();
+      showFloatingText(self.x, self.y, '+20💰 Vitória!', '#6bffb0');
+      broadcastSelfNow();
+    }
+  }
+
+  function scheduleRespawn() {
+    deathOverlay.classList.add('show');
+    let secs = 3;
+    deathText.textContent = 'Respawn em ' + secs + 's...';
+    const iv = setInterval(() => {
+      secs--;
+      if (secs > 0) deathText.textContent = 'Respawn em ' + secs + 's...';
+    }, 1000);
+    setTimeout(() => {
+      clearInterval(iv);
+      self.hp = self.maxHp;
+      self.alive = true;
+      self.x = rand(15, 85);
+      self.y = rand(15, 85);
+      deathOverlay.classList.remove('show');
+      updateHUD();
+      broadcastSelfNow();
+    }, 3000);
+  }
+
+  function flashAttacker(id) {
+    const el = domEls[id];
+    if (!el) return;
+    el.classList.add('attacking');
+    setTimeout(() => el.classList.remove('attacking'), 250);
+  }
+  function flashHit(id) {
+    const el = domEls[id];
+    if (!el) return;
+    el.classList.add('hit');
+    setTimeout(() => el.classList.remove('hit'), 300);
+  }
+
+  function showFloatingText(x, y, text, color) {
+    const el = document.createElement('div');
+    el.className = 'floating-text';
+    el.style.left = x + '%';
+    el.style.top = y + '%';
+    el.style.color = color;
+    el.textContent = text;
+    arenaEl.appendChild(el);
+    setTimeout(() => el.remove(), 1000);
+  }
+
+  // ============================================================
+  // INPUT
+  // ============================================================
+  const MOVE_CODES = ['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'];
+  document.addEventListener('keydown', (e) => {
+    if (MOVE_CODES.includes(e.code) || e.code === 'Space') e.preventDefault();
+    keys[e.code] = true;
+    if (e.code === 'Space' && !e.repeat) tryAttack();
+  });
+  document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+  function bindHold(elId, code) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const on = (ev) => { ev.preventDefault(); keys[code] = true; };
+    const off = (ev) => { ev.preventDefault(); keys[code] = false; };
+    el.addEventListener('touchstart', on, { passive: false });
+    el.addEventListener('touchend', off, { passive: false });
+    el.addEventListener('touchcancel', off, { passive: false });
+    el.addEventListener('mousedown', on);
+    el.addEventListener('mouseup', off);
+    el.addEventListener('mouseleave', off);
+  }
+  bindHold('btnUp', 'KeyW');
+  bindHold('btnDown', 'KeyS');
+  bindHold('btnLeft', 'KeyA');
+  bindHold('btnRight', 'KeyD');
+  const attackBtn = document.getElementById('btnAttack');
+  if (attackBtn) {
+    attackBtn.addEventListener('touchstart', (e) => { e.preventDefault(); tryAttack(); }, { passive: false });
+    attackBtn.addEventListener('mousedown', (e) => { e.preventDefault(); tryAttack(); });
+  }
+
+  // ============================================================
+  // HUD
+  // ============================================================
+  function updateHUD() {
+    document.getElementById('hudCoins').textContent = self.coins;
+    document.getElementById('hudHp').textContent = self.hp;
+    document.getElementById('hudMaxHp').textContent = self.maxHp;
+    document.getElementById('hudXp').textContent = self.xp;
+    document.getElementById('hudLevel').textContent = self.level;
+    document.getElementById('hudDamage').textContent = self.damage;
+    document.getElementById('hudName').textContent = self.name;
+  }
+
+  function updateSyncStatus() {
+    const others = Object.keys(players).filter(id => id !== myId && Date.now() - players[id].lastSeen < STALE_MS);
+    if (others.length > 0) {
+      syncEl.textContent = '🌐 Online — ' + (others.length + 1) + ' jogadores';
+      syncEl.classList.add('on');
+    } else {
+      syncEl.textContent = '🌐 Aguardando outros jogadores...';
+      syncEl.classList.remove('on');
+    }
+  }
+
+  function updatePlayersPanel() {
+    let html = '<div class="row"><b>' + self.name + '</b><span>' + self.hp + '❤️</span></div>';
+    const ids = Object.keys(players).filter(id => id !== myId && Date.now() - players[id].lastSeen < STALE_MS);
+    for (const id of ids) {
+      const p = players[id];
+      html += '<div class="row"><span>' + p.name + '</span><span>' + p.hp + '❤️</span></div>';
+    }
+    playersListEl.innerHTML = html;
+  }
+  setInterval(updatePlayersPanel, 500);
+
+  // ============================================================
+  // NETWORK BROADCAST
+  // ============================================================
+  function broadcastSelfNow() {
+    self.lastSeen = Date.now();
+    players[myId] = self;
+    const slim = {
+      id: self.id, name: self.name, color: self.color, x: self.x, y: self.y,
+      hp: self.hp, maxHp: self.maxHp, coins: self.coins, xp: self.xp,
+      damage: self.damage, alive: self.alive, level: self.level, lastSeen: self.lastSeen
+    };
+    send({ type: 'state', payload: slim });
+    try { localStorage.setItem(LS_PLAYER_PRE + myId, JSON.stringify(slim)); } catch (e) {}
+    updateHUD();
+    updateSyncStatus();
+  }
+  setInterval(broadcastSelfNow, BROADCAST_MS);
+
+  setInterval(() => {
+    const now = Date.now();
+    let changed = false;
+    for (const id in players) {
+      if (id !== myId && now - players[id].lastSeen > STALE_MS) { removePlayer(id); changed = true; }
+    }
+    if (changed) updateSyncStatus();
+  }, 2000);
+
+  window.addEventListener('beforeunload', () => {
+    try { localStorage.removeItem(LS_PLAYER_PRE + myId); } catch (e) {}
+    send({ type: 'player_left', id: myId });
+  });
+
+  // ============================================================
+  // GAME LOOP
+  // ============================================================
+  function setPos(id, x, y) {
+    const el = domEls[id];
+    if (!el) return;
+    el.style.left = x + '%';
+    el.style.top = y + '%';
+  }
+
+  function updateVisualState() {
+    for (const id in players) {
+      const p = players[id];
+      const el = ensurePlayerEl(id);
+      el.classList.toggle('dead', !p.alive);
+      const hpFill = el.querySelector('.hpbar');
+      const pct = Math.max(0, Math.min(100, (p.hp / p.maxHp) * 100));
+      hpFill.style.width = pct + '%';
+    }
+  }
+
+  let lastTs = performance.now();
+  function loop(ts) {
+    const dt = Math.min(0.05, (ts - lastTs) / 1000);
+    lastTs = ts;
+
+    if (self.alive) {
+      let dx = 0, dy = 0;
+      if (keys['KeyW'] || keys['ArrowUp']) dy -= 1;
+      if (keys['KeyS'] || keys['ArrowDown']) dy += 1;
+      if (keys['KeyA'] || keys['ArrowLeft']) dx -= 1;
+      if (keys['KeyD'] || keys['ArrowRight']) dx += 1;
+      if (dx || dy) {
+        const len = Math.hypot(dx, dy);
+        dx /= len; dy /= len;
+        self.x = clamp(self.x + dx * MOVE_SPEED * dt, 3, 97);
+        self.y = clamp(self.y + dy * MOVE_SPEED * dt, 3, 97);
+      }
+      checkMining();
+    }
+
+    setPos(myId, self.x, self.y);
+    for (const id in players) {
+      if (id !== myId) setPos(id, players[id].x, players[id].y);
+    }
+    updateVisualState();
+
+    requestAnimationFrame(loop);
+  }
+
+  updateHUD();
+  updateSyncStatus();
+  broadcastSelfNow();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
